@@ -41,7 +41,7 @@ export { ECCHooksPlugin, default } from "./plugins/index.js"
 export * from "./plugins/index.js"
 
 // Version export
-export const VERSION = "1.6.0"
+export const VERSION = "2.0.0"
 
 // Plugin metadata
 export const metadata = {
@@ -50,9 +50,9 @@ export const metadata = {
   description: "ECC plugin for OpenCode",
   author: "affaan-m",
   features: {
-    agents: 13,
-    commands: 31,
-    skills: 37,
+    agents: 64,
+    commands: 84,
+    skills: 262,
     configAssets: true,
     hookEvents: [
       "file.edited",

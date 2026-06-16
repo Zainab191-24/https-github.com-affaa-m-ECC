@@ -141,7 +141,10 @@ function appendJsonLine(cwd, name, entry) {
   try {
     ensureDir(stateDir(cwd));
     fs.appendFileSync(stateFile(cwd, name), `${JSON.stringify(entry)}\n`);
-  } catch {}
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function readJson(cwd, name, fallback) {
@@ -152,7 +155,10 @@ function writeJson(cwd, name, value) {
   try {
     ensureDir(stateDir(cwd));
     fs.writeFileSync(stateFile(cwd, name), `${JSON.stringify(value, null, 2)}\n`);
-  } catch {}
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function recordChangedFile(cwd, filePath, changeType) {
@@ -288,7 +294,7 @@ function extension(pi) {
   });
 
   pi.on?.('turn_end', async (_event, ctx) => {
-    if (hookEnabled('post:ecc-metrics-bridge', 'minimal')) {
+    if (process.env.ECC_OMP_METRICS === '1' && hookEnabled('post:ecc-metrics-bridge', 'minimal')) {
       const cwd = ctx?.cwd || process.cwd();
       const metrics = readJson(cwd, 'metrics.json', { turns: 0 });
       metrics.turns = Number(metrics.turns || 0) + 1;
@@ -298,7 +304,7 @@ function extension(pi) {
   });
 
   pi.on?.('session_shutdown', async (_event, ctx) => {
-    if (hookEnabled('session:end:marker', 'minimal')) {
+    if (process.env.ECC_OMP_SESSION_MARKERS === '1' && hookEnabled('session:end:marker', 'minimal')) {
       appendJsonLine(ctx?.cwd || process.cwd(), 'session-lifecycle.jsonl', { event: 'session_shutdown', at: new Date().toISOString() });
     }
   });

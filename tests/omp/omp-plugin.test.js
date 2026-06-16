@@ -3,6 +3,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 const pkg = require(path.join(repoRoot, 'package.json'));
@@ -33,6 +34,50 @@ function schemaStub() {
     number: chain,
     enum: () => chain(),
   };
+}
+
+function withEnv(overrides, fn) {
+  const original = {};
+  for (const key of Object.keys(overrides)) {
+    original[key] = process.env[key];
+    if (overrides[key] === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = overrides[key];
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    for (const [key, value] of Object.entries(original)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
+function captureExtensionHandlers() {
+  const handlers = {};
+  extension({
+    zod: schemaStub(),
+    setLabel() {},
+    registerCommand() {},
+    on(event, handler) {
+      handlers[event] = handler;
+    },
+  });
+  return handlers;
+}
+
+function tempWorkspace() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-omp-plugin-'));
+}
+
+function sessionDir(cwd) {
+  return path.join(cwd, '.ecc', 'omp-session');
 }
 
 console.log('\n=== Testing OMP plugin adapter ===\n');
@@ -91,6 +136,38 @@ test('extension registers all markdown commands and core hook events', () => {
   for (const event of ['session_start', 'tool_call', 'tool_result', 'session_before_compact', 'turn_end', 'session_shutdown']) {
     assert.ok(events.includes(event), `Expected event ${event}`);
   }
+});
+
+test('lifecycle handlers do not create state files without opt-in env gates', () => {
+  withEnv({ ECC_OMP_METRICS: undefined, ECC_OMP_SESSION_MARKERS: undefined, ECC_HOOK_PROFILE: undefined }, () => {
+    const cwd = tempWorkspace();
+    const handlers = captureExtensionHandlers();
+    handlers.session_start({}, { cwd, ui: { notify() {} } });
+    handlers.session_before_compact({}, { cwd });
+    handlers.turn_end({}, { cwd });
+    handlers.session_shutdown({}, { cwd });
+    assert.strictEqual(fs.existsSync(sessionDir(cwd)), false, 'Expected lifecycle handlers to avoid creating .ecc/omp-session by default');
+  });
+});
+
+test('lifecycle telemetry and session markers write state only when opted in', () => {
+  withEnv({ ECC_OMP_METRICS: '1', ECC_OMP_SESSION_MARKERS: '1', ECC_HOOK_PROFILE: undefined }, () => {
+    const cwd = tempWorkspace();
+    const handlers = captureExtensionHandlers();
+    handlers.turn_end({}, { cwd });
+    handlers.session_shutdown({}, { cwd });
+
+    const metrics = JSON.parse(fs.readFileSync(path.join(sessionDir(cwd), 'metrics.json'), 'utf8'));
+    const lifecycle = fs.readFileSync(path.join(sessionDir(cwd), 'session-lifecycle.jsonl'), 'utf8').trim().split('\n');
+    assert.strictEqual(metrics.turns, 1);
+    assert.strictEqual(lifecycle.length, 1);
+    assert.strictEqual(JSON.parse(lifecycle[0]).event, 'session_shutdown');
+  });
+});
+
+test('gitignore excludes OMP runtime session state', () => {
+  const gitignore = fs.readFileSync(path.join(repoRoot, '.gitignore'), 'utf8');
+  assert.ok(gitignore.split(/\r?\n/).includes('.ecc/omp-session/'));
 });
 
 if (failed > 0) {

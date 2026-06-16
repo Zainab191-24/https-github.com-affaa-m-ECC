@@ -24,6 +24,40 @@ const repoRoot = path.join(__dirname, '..');
 const opencodeDir = path.join(repoRoot, '.opencode');
 const configPath = path.join(opencodeDir, 'opencode.json');
 const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+const packageJsonPath = path.join(repoRoot, 'package.json');
+const opencodeIndexPath = path.join(opencodeDir, 'index.ts');
+
+function countMarkdownFiles(dirPath) {
+  return fs.readdirSync(dirPath, { withFileTypes: true })
+    .filter(entry => entry.isFile() && entry.name.endsWith('.md'))
+    .length;
+}
+
+function countSkills(dirPath) {
+  return fs.readdirSync(dirPath, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && fs.existsSync(path.join(dirPath, entry.name, 'SKILL.md')))
+    .length;
+}
+
+function readMetadataNumber(source, key) {
+  const match = source.match(new RegExp(`\\b${key}:\\s*(\\d+),`));
+  assert.ok(match, `Expected metadata.features.${key} to be declared as a numeric literal`);
+  return Number.parseInt(match[1], 10);
+}
+
+function readVersion(source) {
+  const match = source.match(/export const VERSION = "([^"]+)"/);
+  assert.ok(match, 'Expected OpenCode index.ts to export VERSION');
+  return match[1];
+}
+
+function readCatalogCounts() {
+  return {
+    agents: countMarkdownFiles(path.join(repoRoot, 'agents')),
+    commands: countMarkdownFiles(path.join(repoRoot, 'commands')),
+    skills: countSkills(path.join(repoRoot, 'skills')),
+  };
+}
 
 let passed = 0;
 let failed = 0;
@@ -93,6 +127,26 @@ if (
         `Expected plugin-scoped agent id in ${entry}, got: ${match[1]}`
       );
     }
+  })
+)
+  passed++;
+else failed++;
+
+if (
+  test('OpenCode package metadata matches package.json and catalog counts', () => {
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+    const indexSource = fs.readFileSync(opencodeIndexPath, 'utf8');
+    const catalogCounts = readCatalogCounts();
+
+    assert.strictEqual(readVersion(indexSource), packageJson.version);
+    assert.deepStrictEqual(
+      {
+        agents: readMetadataNumber(indexSource, 'agents'),
+        commands: readMetadataNumber(indexSource, 'commands'),
+        skills: readMetadataNumber(indexSource, 'skills'),
+      },
+      catalogCounts
+    );
   })
 )
   passed++;

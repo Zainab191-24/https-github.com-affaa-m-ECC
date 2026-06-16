@@ -23,14 +23,6 @@ function fileExists(cwd, relativePath) {
   }
 }
 
-function dirExists(cwd, relativePath) {
-  try {
-    return fs.statSync(path.join(cwd, relativePath)).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
 function detectPackageManager(cwd) {
   if (fileExists(cwd, 'bun.lockb') || fileExists(cwd, 'bun.lock')) return 'bun';
   if (fileExists(cwd, 'pnpm-lock.yaml')) return 'pnpm';
@@ -95,9 +87,13 @@ function detectLinter(cwd, override) {
     if (fileExists(cwd, name)) return 'eslint';
   }
   if (fileExists(cwd, 'pyproject.toml')) {
+    let pyproject = '';
     try {
-      if (fs.readFileSync(path.join(cwd, 'pyproject.toml'), 'utf8').includes('ruff')) return 'ruff';
-    } catch {}
+      pyproject = fs.readFileSync(path.join(cwd, 'pyproject.toml'), 'utf8');
+    } catch {
+      pyproject = '';
+    }
+    if (pyproject.includes('ruff')) return 'ruff';
   }
   if (fileExists(cwd, '.golangci.yml') || fileExists(cwd, '.golangci.yaml')) return 'golangci-lint';
   return 'eslint';

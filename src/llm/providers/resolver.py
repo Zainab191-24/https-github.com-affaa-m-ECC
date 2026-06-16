@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 from llm.core.interface import LLMProvider
 from llm.core.types import ProviderType
 from llm.providers.astraflow import AstraflowCNProvider, AstraflowProvider
 from llm.providers.claude import ClaudeProvider
-from llm.providers.openai import OpenAIProvider
 from llm.providers.ollama import OllamaProvider
-
+from llm.providers.openai import OpenAIProvider
 
 _PROVIDER_MAP: dict[ProviderType, type[LLMProvider]] = {
     ProviderType.ASTRAFLOW: AstraflowProvider,
@@ -46,7 +46,10 @@ def _read_saved_llm_config(env_path: str | Path = LLM_ENV_FILE) -> dict[str, str
     return config
 
 
-def _resolve_provider_type(provider_type: ProviderType | str | None) -> ProviderType | str:
+def _resolve_provider_type(
+    provider_type: ProviderType | str | None,
+    saved_config: dict[str, str] | None = None,
+) -> ProviderType | str:
     if provider_type is not None:
         return provider_type
 
@@ -54,12 +57,28 @@ def _resolve_provider_type(provider_type: ProviderType | str | None) -> Provider
     if env_provider:
         return _strip_env_value(env_provider).lower()
 
+    config = saved_config if saved_config is not None else _read_saved_llm_config()
+    return config.get("LLM_PROVIDER", "claude").lower()
+
+
+def _resolve_default_model(
+    explicit_provider_type: ProviderType | str | None,
+    saved_config: dict[str, str],
+) -> str | None:
+    env_model = os.environ.get("LLM_MODEL")
+    if env_model:
+        return _strip_env_value(env_model)
+
+    if explicit_provider_type is None and not os.environ.get("LLM_PROVIDER"):
+        return saved_config.get("LLM_MODEL")
+
+    return None
+
+
+def get_provider(provider_type: ProviderType | str | None = None, **kwargs: Any) -> LLMProvider:
     saved_config = _read_saved_llm_config()
-    return saved_config.get("LLM_PROVIDER", "claude").lower()
-
-
-def get_provider(provider_type: ProviderType | str | None = None, **kwargs: str) -> LLMProvider:
-    provider_type = _resolve_provider_type(provider_type)
+    explicit_provider_type = provider_type
+    provider_type = _resolve_provider_type(provider_type, saved_config)
 
     if isinstance(provider_type, str):
         try:
@@ -70,6 +89,11 @@ def get_provider(provider_type: ProviderType | str | None = None, **kwargs: str)
     provider_cls = _PROVIDER_MAP.get(provider_type)
     if not provider_cls:
         raise ValueError(f"No provider registered for type: {provider_type}")
+
+    if "default_model" not in kwargs:
+        default_model = _resolve_default_model(explicit_provider_type, saved_config)
+        if default_model:
+            kwargs = {**kwargs, "default_model": default_model}
 
     return provider_cls(**kwargs)
 

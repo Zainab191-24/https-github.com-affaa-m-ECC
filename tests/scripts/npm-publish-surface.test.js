@@ -40,11 +40,12 @@ function buildExpectedPublishPaths(repoRoot) {
   ).modules
 
   const extraPaths = [
+    "skills",
     "manifests",
     "scripts/ecc.js",
     "scripts/catalog.js",
-    "scripts/ci/scan-supply-chain-iocs.js",
-    "scripts/ci/supply-chain-advisory-sources.js",
+    "scripts/ci",
+    "scripts/build-opencode.js",
     "scripts/consult.js",
     "scripts/control-pane.js",
     "scripts/discussion-audit.js",
@@ -71,6 +72,7 @@ function buildExpectedPublishPaths(repoRoot) {
     "scripts/codex/merge-codex-config.js",
     "scripts/codex/merge-mcp-config.js",
     ".codex-plugin",
+    "omp",
     "plugins/ecc",
     ".mcp.json",
     "install.sh",
@@ -80,6 +82,7 @@ function buildExpectedPublishPaths(repoRoot) {
     "VERSION",
     "assets/ecc-icon.svg",
     "assets/hero.png",
+    "tests",
   ]
   const exclusionPaths = [
     "!**/__pycache__/**",
@@ -131,6 +134,11 @@ function main() {
         "scripts/catalog.js",
         "scripts/ci/scan-supply-chain-iocs.js",
         "scripts/ci/supply-chain-advisory-sources.js",
+        "scripts/ci/catalog.js",
+        "scripts/ci/generate-command-registry.js",
+        "scripts/ci/validate-hooks.js",
+        "scripts/ci/validate-install-manifests.js",
+        "scripts/build-opencode.js",
         "scripts/consult.js",
         "scripts/control-pane.js",
         "scripts/discussion-audit.js",
@@ -149,6 +157,10 @@ function main() {
         "assets/hero.png",
         "schemas/install-state.schema.json",
         "skills/backend-patterns/SKILL.md",
+        "skills/bun-runtime/SKILL.md",
+        "omp/extension.js",
+        "omp/tools/index.js",
+        "tests/run-all.js",
       ]) {
         assert.ok(
           packagedPaths.has(requiredPath),
@@ -160,8 +172,6 @@ function main() {
         "contexts/dev.md",
         "examples/CLAUDE.md",
         "plugins/README.md",
-        "scripts/ci/catalog.js",
-        "skills/skill-comply/SKILL.md",
       ]) {
         assert.ok(
           !packagedPaths.has(excludedPath),
