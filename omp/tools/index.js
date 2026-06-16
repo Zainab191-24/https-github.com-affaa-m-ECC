@@ -7,12 +7,44 @@ const MAX_SCAN_FILES = 1500;
 const MAX_FILE_BYTES = 256 * 1024;
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'coverage', '.next', '.turbo', '.cache', '.venv', 'venv', '__pycache__']);
 
-function textResult(text, details) {
-  return { content: [{ type: 'text', text }], details };
+function envelopeResult({
+  status,
+  summary,
+  nextActions = [],
+  artifacts = [],
+  data = null,
+  error = null,
+  text = null,
+}) {
+  const details = {
+    status,
+    summary,
+    next_actions: nextActions,
+    artifacts,
+    data,
+    error,
+  };
+  return { content: [{ type: 'text', text: text || JSON.stringify(details, null, 2) }], details };
 }
 
-function jsonResult(value) {
-  return textResult(JSON.stringify(value, null, 2), value);
+function successResult(summary, data, options = {}) {
+  return envelopeResult({ status: 'success', summary, data, ...options });
+}
+
+function warningResult(summary, data, options = {}) {
+  return envelopeResult({ status: 'warning', summary, data, ...options });
+}
+
+function errorResult(summary, data, options = {}) {
+  return envelopeResult({ status: 'error', summary, data, ...options });
+}
+
+function readJsonFile(file) {
+  try {
+    return { ok: true, value: JSON.parse(fs.readFileSync(file, 'utf8')) };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 function fileExists(cwd, relativePath) {
@@ -220,6 +252,11 @@ function readChangedFiles(cwd, filter) {
 
 function makeTools(pi) {
   const z = pi.zod?.z || pi.zod;
+  if (!z || typeof z.object !== 'function') {
+    throw new Error(
+      'OMP runtime did not provide a compatible zod schema helper for ECC tools. Retry with a current OMP build or disable the ECC tool port.'
+    );
+  }
   const cwdOf = (ctx) => ctx?.cwd || pi.cwd || process.cwd();
 
   return [
@@ -242,9 +279,19 @@ function makeTools(pi) {
         if (params.coverage) args.push('--coverage');
         if (params.watch) args.push('--watch');
         if (params.updateSnapshots) args.push('-u');
-        if (params.pattern) args.push(testFramework === 'jest' || testFramework === 'vitest' ? `--testPathPattern ${shellQuote(params.pattern)}` : shellQuote(params.pattern));
+        if (params.pattern) {
+          args.push(
+            testFramework === 'jest' || testFramework === 'vitest'
+              ? `--testPathPattern ${shellQuote(params.pattern)}`
+              : shellQuote(params.pattern)
+          );
+        }
         const fullCommand = `${command.join(' ')}${args.length ? ` ${packageManager === 'npm' ? '-- ' : ''}${args.join(' ')}` : ''}`;
-        return jsonResult({ command: fullCommand, packageManager, testFramework, options: params });
+        return successResult(
+          'Suggested test command detected.',
+          { command: fullCommand, packageManager, testFramework, options: params },
+          { nextActions: [`Run: ${fullCommand}`] }
+        );
       },
     },
     {
@@ -259,11 +306,50 @@ function makeTools(pi) {
         for (const candidate of candidates) {
           const full = path.join(cwd, candidate);
           if (!fs.existsSync(full)) continue;
-          const summary = coverageSummary(JSON.parse(fs.readFileSync(full, 'utf8')));
+          const parsed = readJsonFile(full);
+          if (!parsed.ok) {
+            return errorResult(
+              `Coverage report at ${candidate} could not be parsed.`,
+              { coverageFile: candidate },
+              {
+                nextActions: ['Regenerate the coverage report and retry.', `Repair or remove the stale file at ${candidate}.`],
+                artifacts: [candidate],
+                error: parsed.error,
+              }
+            );
+          }
+          const summary = coverageSummary(parsed.value);
           const uncovered = summary.files.filter((entry) => entry.percentage < threshold);
-          return jsonResult({ success: summary.total.percentage >= threshold, threshold, coverageFile: candidate, total: summary.total, uncoveredFiles: params.showUncovered === false ? undefined : uncovered });
+          const data = {
+            threshold,
+            coverageFile: candidate,
+            total: summary.total,
+            uncoveredFiles: params.showUncovered === false ? undefined : uncovered,
+          };
+          if (summary.total.percentage >= threshold) {
+            return successResult(
+              `Coverage threshold met (${summary.total.percentage}% ≥ ${threshold}%).`,
+              data,
+              { artifacts: [candidate] }
+            );
+          }
+          return warningResult(
+            `Coverage threshold missed (${summary.total.percentage}% < ${threshold}%).`,
+            data,
+            {
+              nextActions: ['Inspect uncovered files before merging.', 'Re-run coverage after adding tests.'],
+              artifacts: [candidate],
+            }
+          );
         }
-        return jsonResult({ success: false, error: 'No supported coverage report found', searchedPaths: candidates });
+        return warningResult(
+          'No supported coverage report found.',
+          { searchedPaths: candidates },
+          {
+            nextActions: ['Run the project coverage command first and retry.'],
+            artifacts: candidates,
+          }
+        );
       },
     },
     {
@@ -273,13 +359,26 @@ function makeTools(pi) {
       parameters: z.object({ type: z.enum(['all', 'dependencies', 'secrets', 'code']).optional(), fix: z.boolean().optional(), severity: z.enum(['low', 'moderate', 'high', 'critical']).optional() }),
       async execute(_id, params, _onUpdate, ctx) {
         const cwd = cwdOf(ctx);
-        if (params.fix) return jsonResult({ success: false, error: 'Auto-fix is intentionally not supported by the OMP port.' });
+        if (params.fix) {
+          return errorResult(
+            'Auto-fix is intentionally not supported by the OMP port.',
+            { requestedFix: true, type: params.type ?? 'all' },
+            {
+              nextActions: ['Re-run with fix=false and apply any changes manually in a controlled shell.'],
+              error: 'unsupported_fix_mode',
+            }
+          );
+        }
         const type = params.type ?? 'all';
         const checks = [];
         if (type === 'all' || type === 'dependencies') checks.push({ name: 'Dependency Vulnerabilities', status: 'manual', command: 'Run npm audit/pnpm audit in a controlled shell if needed.' });
         if (type === 'all' || type === 'secrets') checks.push({ name: 'Secret Detection', status: 'complete', findings: scanForSecrets(cwd) });
         if (type === 'all' || type === 'code') checks.push({ name: 'Code Security Patterns', status: 'complete', findings: scanCodeSecurity(cwd) });
-        return jsonResult({ timestamp: new Date().toISOString(), directory: cwd, severity: params.severity ?? 'moderate', checks });
+        return successResult(
+          'Security audit completed.',
+          { timestamp: new Date().toISOString(), directory: cwd, severity: params.severity ?? 'moderate', checks },
+          { nextActions: ['Review findings before applying manual fixes.'] }
+        );
       },
     },
     {
@@ -291,7 +390,24 @@ function makeTools(pi) {
         const cwd = cwdOf(ctx);
         const formatter = detectFormatter(cwd, params.filePath, params.formatter);
         const command = formatter && formatterCommand(formatter, params.filePath);
-        return jsonResult(command ? { success: true, formatter, command } : { success: false, message: `No formatter detected for ${params.filePath}` });
+        if (!command) {
+          return warningResult(
+            `No formatter detected for ${params.filePath}.`,
+            { filePath: params.filePath },
+            {
+              nextActions: ['Pass an explicit formatter override or add the project formatter config first.'],
+              artifacts: [params.filePath],
+            }
+          );
+        }
+        return successResult(
+          `Formatter detected for ${params.filePath}.`,
+          { formatter, command, filePath: params.filePath },
+          {
+            nextActions: [`Run: ${command}`],
+            artifacts: [params.filePath],
+          }
+        );
       },
     },
     {
@@ -301,8 +417,17 @@ function makeTools(pi) {
       parameters: z.object({ target: z.string().optional(), fix: z.boolean().optional(), linter: z.enum(['biome', 'eslint', 'ruff', 'pylint', 'golangci-lint']).optional() }),
       async execute(_id, params, _onUpdate, ctx) {
         const cwd = cwdOf(ctx);
+        const target = params.target || '.';
         const linter = detectLinter(cwd, params.linter);
-        return jsonResult({ success: true, linter, command: linterCommand(linter, params.target || '.', Boolean(params.fix)) });
+        const command = linterCommand(linter, target, Boolean(params.fix));
+        return successResult(
+          `Linter command prepared for ${target}.`,
+          { linter, command, target, fix: Boolean(params.fix) },
+          {
+            nextActions: [`Run: ${command}`],
+            artifacts: [target],
+          }
+        );
       },
     },
     {
@@ -314,17 +439,71 @@ function makeTools(pi) {
         const cwd = cwdOf(ctx);
         const depth = Math.max(1, Math.min(50, Math.floor(params.depth ?? 5)));
         const baseBranch = params.baseBranch || 'main';
-        if (!/^[A-Za-z0-9._/@+-]+$/.test(baseBranch)) throw new Error('Invalid baseBranch');
+        if (
+          !/^[A-Za-z0-9._/@+-]+$/.test(baseBranch)
+          || baseBranch.includes('..')
+          || baseBranch.startsWith('.')
+          || baseBranch.startsWith('-')
+        ) {
+          return errorResult(
+            'Invalid baseBranch.',
+            { baseBranch },
+            {
+              nextActions: ['Use a plain branch name without path traversal, leading dots, or leading dashes.'],
+              error: 'baseBranch failed validation',
+            }
+          );
+        }
+        if (typeof pi.exec !== 'function') {
+          return errorResult(
+            'OMP runtime does not provide exec support for git summary.',
+            { baseBranch, depth },
+            {
+              nextActions: ['Run this tool in an OMP runtime with process execution support.'],
+              error: 'missing exec capability',
+            }
+          );
+        }
         async function git(args) {
           const result = await pi.exec('git', args, { cwd, signal });
-          return result.code === 0 ? result.stdout.trim() : '';
+          return {
+            ok: result.code === 0,
+            stdout: result.stdout.trim(),
+            stderr: (result.stderr || '').trim(),
+            command: `git ${args.join(' ')}`,
+          };
         }
-        const summary = { branch: await git(['branch', '--show-current']) || 'unknown', status: await git(['status', '--short']) || 'clean', log: await git(['log', '--oneline', `-${depth}`]) || 'no commits found' };
+        const branch = await git(['branch', '--show-current']);
+        const status = await git(['status', '--short']);
+        const log = await git(['log', '--oneline', `-${depth}`]);
+        const summary = {
+          branch: branch.ok ? (branch.stdout || 'unknown') : 'unknown',
+          status: status.ok ? (status.stdout || 'clean') : 'unknown',
+          log: log.ok ? (log.stdout || 'no commits found') : 'unknown',
+          gitFailures: [],
+        };
+        for (const result of [branch, status, log]) {
+          if (!result.ok) summary.gitFailures.push(result);
+        }
         if (params.includeDiff !== false) {
-          summary.stagedDiff = await git(['diff', '--cached', '--stat']);
-          summary.branchDiff = await git(['diff', `${baseBranch}...HEAD`, '--stat']);
+          const stagedDiff = await git(['diff', '--cached', '--stat']);
+          const branchDiff = await git(['diff', `${baseBranch}...HEAD`, '--stat']);
+          summary.stagedDiff = stagedDiff.ok ? stagedDiff.stdout : '';
+          summary.branchDiff = branchDiff.ok ? branchDiff.stdout : '';
+          if (!stagedDiff.ok) summary.gitFailures.push(stagedDiff);
+          if (!branchDiff.ok) summary.gitFailures.push(branchDiff);
         }
-        return jsonResult(summary);
+        if (summary.gitFailures.length > 0) {
+          return warningResult(
+            'Git summary generated with partial failures.',
+            summary,
+            {
+              nextActions: ['Verify the directory is a git repository and that the requested base branch exists locally.'],
+              error: 'One or more git commands failed.',
+            }
+          );
+        }
+        return successResult('Git summary generated.', summary);
       },
     },
     {
@@ -334,9 +513,27 @@ function makeTools(pi) {
       parameters: z.object({ filter: z.enum(['all', 'added', 'modified', 'deleted']).optional(), format: z.enum(['tree', 'json']).optional() }),
       async execute(_id, params, _onUpdate, ctx) {
         const files = readChangedFiles(cwdOf(ctx), params.filter || 'all');
-        if ((params.format || 'tree') === 'json') return jsonResult({ changed: files.length > 0, files });
-        if (!files.length) return textResult('No files changed in this session.', { changed: false, files: [] });
-        return textResult(files.map((entry) => `${entry.changeType || 'modified'}\t${entry.path}`).join('\n'), { changed: true, files });
+        if ((params.format || 'tree') === 'json') {
+          return successResult('Changed files loaded.', { changed: files.length > 0, files }, { artifacts: files.map((entry) => entry.path) });
+        }
+        if (!files.length) {
+          return successResult(
+            'No files changed in this session.',
+            { changed: false, files: [] },
+            {
+              nextActions: ['Make an edit through the OMP session and retry if you expected tracked changes.'],
+              text: 'No files changed in this session.',
+            }
+          );
+        }
+        return successResult(
+          'Changed files loaded.',
+          { changed: true, files },
+          {
+            artifacts: files.map((entry) => entry.path),
+            text: files.map((entry) => `${entry.changeType || 'modified'}\t${entry.path}`).join('\n'),
+          }
+        );
       },
     },
   ];

@@ -47,9 +47,6 @@
     "tools": [
       "./omp/tools/index.js"
     ],
-    "hooks": [
-      "./hooks/hooks.json"
-    ],
     "commands": [
       "./commands"
     ]

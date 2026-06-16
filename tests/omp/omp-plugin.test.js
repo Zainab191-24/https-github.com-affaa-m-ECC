@@ -12,17 +12,10 @@ const extension = require(path.join(repoRoot, 'omp/extension.js'));
 
 let passed = 0;
 let failed = 0;
+const tests = [];
 
 function test(name, fn) {
-  try {
-    fn();
-    console.log(`  PASS ${name}`);
-    passed++;
-  } catch (error) {
-    console.log(`  FAIL ${name}`);
-    console.log(`    Error: ${error.message}`);
-    failed++;
-  }
+  tests.push({ name, fn });
 }
 
 function schemaStub() {
@@ -36,7 +29,7 @@ function schemaStub() {
   };
 }
 
-function withEnv(overrides, fn) {
+async function withEnv(overrides, fn) {
   const original = {};
   for (const key of Object.keys(overrides)) {
     original[key] = process.env[key];
@@ -47,7 +40,7 @@ function withEnv(overrides, fn) {
     }
   }
   try {
-    return fn();
+    return await fn();
   } finally {
     for (const [key, value] of Object.entries(original)) {
       if (value === undefined) {
@@ -80,6 +73,33 @@ function sessionDir(cwd) {
   return path.join(cwd, '.ecc', 'omp-session');
 }
 
+function createTools(options = {}) {
+  return toolFactory({
+    cwd: options.cwd || repoRoot,
+    zod: schemaStub(),
+    exec: options.exec || (async () => ({ code: 0, stdout: '', stderr: '' })),
+  });
+}
+
+function getTool(tools, name) {
+  const tool = tools.find((entry) => entry.name === name);
+  assert.ok(tool, `Expected tool ${name}`);
+  return tool;
+}
+
+function assertEnvelope(result, expectedStatus) {
+  assert.ok(result, 'Expected a result object');
+  assert.ok(Array.isArray(result.content), 'Expected content array');
+  assert.strictEqual(typeof result.content[0].text, 'string');
+  assert.ok(result.details, 'Expected details payload');
+  assert.strictEqual(result.details.status, expectedStatus);
+  assert.strictEqual(typeof result.details.summary, 'string');
+  assert.ok(Array.isArray(result.details.next_actions), 'Expected next_actions array');
+  assert.ok(Array.isArray(result.details.artifacts), 'Expected artifacts array');
+  assert.ok(Object.prototype.hasOwnProperty.call(result.details, 'data'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result.details, 'error'));
+}
+
 console.log('\n=== Testing OMP plugin adapter ===\n');
 
 test('package manifest exposes OMP runtime adapter paths', () => {
@@ -87,21 +107,18 @@ test('package manifest exposes OMP runtime adapter paths', () => {
   assert.deepStrictEqual(pkg.omp.extensions, ['./omp/extension.js']);
   assert.deepStrictEqual(pkg.omp.tools, ['./omp/tools/index.js']);
   assert.deepStrictEqual(pkg.omp.commands, ['./commands']);
-  assert.deepStrictEqual(pkg.omp.hooks, ['./hooks/hooks.json']);
+  assert.ok(!Object.prototype.hasOwnProperty.call(pkg.omp, 'hooks'), 'Expected package.json#omp.hooks to be absent');
   assert.ok(pkg.files.includes('omp/'), 'Expected npm package files to include omp/');
 });
 
 test('OMP manifest paths exist', () => {
-  for (const entry of [...pkg.omp.extensions, ...pkg.omp.tools]) {
-    assert.ok(fs.existsSync(path.join(repoRoot, entry)), `${entry} should exist`);
-  }
-  for (const entry of [...pkg.omp.commands, ...pkg.omp.hooks]) {
+  for (const entry of [...pkg.omp.extensions, ...pkg.omp.tools, ...pkg.omp.commands]) {
     assert.ok(fs.existsSync(path.join(repoRoot, entry)), `${entry} should exist`);
   }
 });
 
 test('tool factory registers seven OMP tools', () => {
-  const tools = toolFactory({ cwd: repoRoot, zod: schemaStub(), exec: async () => ({ code: 0, stdout: '', stderr: '' }) });
+  const tools = createTools();
   assert.strictEqual(tools.length, 7);
   assert.deepStrictEqual(tools.map((tool) => tool.name).sort(), [
     'ecc_changed_files',
@@ -112,6 +129,72 @@ test('tool factory registers seven OMP tools', () => {
     'ecc_run_tests',
     'ecc_security_audit',
   ].sort());
+});
+
+test('tool factory fails fast without a compatible zod helper', () => {
+  assert.throws(
+    () => toolFactory({ cwd: repoRoot, exec: async () => ({ code: 0, stdout: '', stderr: '' }) }),
+    /compatible zod schema helper/
+  );
+});
+
+test('OMP tools expose stable observation envelopes', async () => {
+  const cwd = tempWorkspace();
+  fs.writeFileSync(path.join(cwd, 'package-lock.json'), '{}\n');
+  fs.writeFileSync(path.join(cwd, 'package.json'), JSON.stringify({ devDependencies: { jest: '^29.0.0' } }, null, 2));
+  fs.writeFileSync(path.join(cwd, 'eslint.config.js'), 'module.exports = [];');
+
+  const tools = createTools({
+    cwd,
+    exec: async (_command, args) => {
+      const key = args.join(' ');
+      if (key === 'branch --show-current') return { code: 0, stdout: 'main\n', stderr: '' };
+      if (key === 'status --short') return { code: 0, stdout: ' M package.json\n', stderr: '' };
+      if (key === 'log --oneline -5') return { code: 0, stdout: 'abc123 test commit\n', stderr: '' };
+      if (key === 'diff --cached --stat') return { code: 0, stdout: '', stderr: '' };
+      if (key === 'diff main...HEAD --stat') return { code: 0, stdout: ' package.json | 1 +\n', stderr: '' };
+      return { code: 1, stdout: '', stderr: `unexpected exec call: ${key}` };
+    },
+  });
+
+  const runTests = await getTool(tools, 'ecc_run_tests').execute('1', { coverage: true }, null, { cwd });
+  assertEnvelope(runTests, 'success');
+  assert.match(runTests.details.data.command, /^npm run test -- --coverage$/);
+
+  const coverage = await getTool(tools, 'ecc_check_coverage').execute('2', { threshold: 80 }, null, { cwd });
+  assertEnvelope(coverage, 'warning');
+
+  const audit = await getTool(tools, 'ecc_security_audit').execute('3', { type: 'code' }, null, { cwd });
+  assertEnvelope(audit, 'success');
+
+  const format = await getTool(tools, 'ecc_format_code').execute('4', { filePath: 'src/example.js' }, null, { cwd });
+  assertEnvelope(format, 'success');
+
+  const lint = await getTool(tools, 'ecc_lint_check').execute('5', { target: 'src' }, null, { cwd });
+  assertEnvelope(lint, 'success');
+
+  const git = await getTool(tools, 'ecc_git_summary').execute('6', { baseBranch: 'main', depth: 5 }, null, { cwd });
+  assertEnvelope(git, 'success');
+
+  const changed = await getTool(tools, 'ecc_changed_files').execute('7', { format: 'json' }, null, { cwd });
+  assertEnvelope(changed, 'success');
+});
+
+test('coverage parse failures return structured error envelopes', async () => {
+  const cwd = tempWorkspace();
+  fs.mkdirSync(path.join(cwd, 'coverage'), { recursive: true });
+  fs.writeFileSync(path.join(cwd, 'coverage', 'coverage-summary.json'), '{not-json');
+  const tools = createTools({ cwd });
+  const result = await getTool(tools, 'ecc_check_coverage').execute('8', { threshold: 80 }, null, { cwd });
+  assertEnvelope(result, 'error');
+  assert.match(result.details.summary, /could not be parsed/);
+});
+
+test('git summary rejects invalid base branches with a structured error envelope', async () => {
+  const tools = createTools({ cwd: repoRoot });
+  const result = await getTool(tools, 'ecc_git_summary').execute('9', { baseBranch: '../bad' }, null, { cwd: repoRoot });
+  assertEnvelope(result, 'error');
+  assert.match(result.details.summary, /Invalid baseBranch/);
 });
 
 test('extension registers all markdown commands and core hook events', () => {
@@ -138,24 +221,24 @@ test('extension registers all markdown commands and core hook events', () => {
   }
 });
 
-test('lifecycle handlers do not create state files without opt-in env gates', () => {
-  withEnv({ ECC_OMP_METRICS: undefined, ECC_OMP_SESSION_MARKERS: undefined, ECC_HOOK_PROFILE: undefined }, () => {
+test('lifecycle handlers do not create state files without opt-in env gates', async () => {
+  await withEnv({ ECC_OMP_METRICS: undefined, ECC_OMP_SESSION_MARKERS: undefined, ECC_HOOK_PROFILE: undefined }, async () => {
     const cwd = tempWorkspace();
     const handlers = captureExtensionHandlers();
-    handlers.session_start({}, { cwd, ui: { notify() {} } });
-    handlers.session_before_compact({}, { cwd });
-    handlers.turn_end({}, { cwd });
-    handlers.session_shutdown({}, { cwd });
+    await handlers.session_start({}, { cwd, ui: { notify() {} } });
+    await handlers.session_before_compact({}, { cwd });
+    await handlers.turn_end({}, { cwd });
+    await handlers.session_shutdown({}, { cwd });
     assert.strictEqual(fs.existsSync(sessionDir(cwd)), false, 'Expected lifecycle handlers to avoid creating .ecc/omp-session by default');
   });
 });
 
-test('lifecycle telemetry and session markers write state only when opted in', () => {
-  withEnv({ ECC_OMP_METRICS: '1', ECC_OMP_SESSION_MARKERS: '1', ECC_HOOK_PROFILE: undefined }, () => {
+test('lifecycle telemetry and session markers write state only when opted in', async () => {
+  await withEnv({ ECC_OMP_METRICS: '1', ECC_OMP_SESSION_MARKERS: '1', ECC_HOOK_PROFILE: undefined }, async () => {
     const cwd = tempWorkspace();
     const handlers = captureExtensionHandlers();
-    handlers.turn_end({}, { cwd });
-    handlers.session_shutdown({}, { cwd });
+    await handlers.turn_end({}, { cwd });
+    await handlers.session_shutdown({}, { cwd });
 
     const metrics = JSON.parse(fs.readFileSync(path.join(sessionDir(cwd), 'metrics.json'), 'utf8'));
     const lifecycle = fs.readFileSync(path.join(sessionDir(cwd), 'session-lifecycle.jsonl'), 'utf8').trim().split('\n');
@@ -170,9 +253,28 @@ test('gitignore excludes OMP runtime session state', () => {
   assert.ok(gitignore.split(/\r?\n/).includes('.ecc/omp-session/'));
 });
 
-if (failed > 0) {
-  console.log(`\nFailed: ${failed}`);
-  process.exit(1);
+async function run() {
+  for (const { name, fn } of tests) {
+    try {
+      await fn();
+      console.log(`  PASS ${name}`);
+      passed++;
+    } catch (error) {
+      console.log(`  FAIL ${name}`);
+      console.log(`    Error: ${error.message}`);
+      failed++;
+    }
+  }
+
+  if (failed > 0) {
+    console.log(`\nFailed: ${failed}`);
+    process.exit(1);
+  }
+
+  console.log(`\nPassed: ${passed}`);
 }
 
-console.log(`\nPassed: ${passed}`);
+run().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
