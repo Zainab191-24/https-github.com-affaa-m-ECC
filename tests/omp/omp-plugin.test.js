@@ -4,11 +4,12 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { pathToFileURL } = require('url');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 const pkg = require(path.join(repoRoot, 'package.json'));
 const toolFactory = require(path.join(repoRoot, 'omp/tools/index.js'));
-const extension = require(path.join(repoRoot, 'omp/extension.js'));
+const extensionModuleUrl = `${pathToFileURL(path.join(repoRoot, 'omp/extension.mjs')).href}?test=${Date.now()}`;
 
 let passed = 0;
 let failed = 0;
@@ -52,8 +53,14 @@ async function withEnv(overrides, fn) {
   }
 }
 
-function captureExtensionHandlers() {
+async function loadExtension() {
+  const module = await import(extensionModuleUrl);
+  return module.default;
+}
+
+async function captureExtensionHandlers() {
   const handlers = {};
+  const extension = await loadExtension();
   extension({
     zod: schemaStub(),
     setLabel() {},
@@ -104,7 +111,7 @@ console.log('\n=== Testing OMP plugin adapter ===\n');
 
 test('package manifest exposes OMP runtime adapter paths', () => {
   assert.ok(pkg.omp, 'Expected package.json#omp');
-  assert.deepStrictEqual(pkg.omp.extensions, ['./omp/extension.js']);
+  assert.deepStrictEqual(pkg.omp.extensions, ['./omp/extension.mjs']);
   assert.deepStrictEqual(pkg.omp.tools, ['./omp/tools/index.js']);
   assert.deepStrictEqual(pkg.omp.commands, ['./commands']);
   assert.ok(!Object.prototype.hasOwnProperty.call(pkg.omp, 'hooks'), 'Expected package.json#omp.hooks to be absent');
@@ -197,7 +204,8 @@ test('git summary rejects invalid base branches with a structured error envelope
   assert.match(result.details.summary, /Invalid baseBranch/);
 });
 
-test('extension registers all markdown commands and core hook events', () => {
+test('extension registers all markdown commands and core hook events', async () => {
+  const extension = await loadExtension();
   const commands = [];
   const events = [];
   const pi = {
@@ -224,7 +232,7 @@ test('extension registers all markdown commands and core hook events', () => {
 test('lifecycle handlers do not create state files without opt-in env gates', async () => {
   await withEnv({ ECC_OMP_METRICS: undefined, ECC_OMP_SESSION_MARKERS: undefined, ECC_HOOK_PROFILE: undefined }, async () => {
     const cwd = tempWorkspace();
-    const handlers = captureExtensionHandlers();
+    const handlers = await captureExtensionHandlers();
     await handlers.session_start({}, { cwd, ui: { notify() {} } });
     await handlers.session_before_compact({}, { cwd });
     await handlers.turn_end({}, { cwd });
@@ -236,7 +244,7 @@ test('lifecycle handlers do not create state files without opt-in env gates', as
 test('lifecycle telemetry and session markers write state only when opted in', async () => {
   await withEnv({ ECC_OMP_METRICS: '1', ECC_OMP_SESSION_MARKERS: '1', ECC_HOOK_PROFILE: undefined }, async () => {
     const cwd = tempWorkspace();
-    const handlers = captureExtensionHandlers();
+    const handlers = await captureExtensionHandlers();
     await handlers.turn_end({}, { cwd });
     await handlers.session_shutdown({}, { cwd });
 

@@ -42,7 +42,7 @@
   "omp": {
     "description": "OMP-native ECC module exposing curated commands, safe tool ports, and a guarded extension adapter. Claude/OpenCode hooks are translated into OMP extension events; telemetry and risky blocking policies remain opt-in by environment/profile gates.",
     "extensions": [
-      "./omp/extension.js"
+      "./omp/extension.mjs"
     ],
     "tools": [
       "./omp/tools/index.js"

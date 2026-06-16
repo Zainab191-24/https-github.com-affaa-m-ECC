@@ -158,7 +158,7 @@ function main() {
         "schemas/install-state.schema.json",
         "skills/backend-patterns/SKILL.md",
         "skills/bun-runtime/SKILL.md",
-        "omp/extension.js",
+        "omp/extension.mjs",
         "omp/tools/index.js",
         "tests/run-all.js",
       ]) {
