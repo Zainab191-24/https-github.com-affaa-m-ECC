@@ -1,6 +1,8 @@
 ---
 name: living-docs-governance
 description: "Keep a long-lived project's documentation from rotting by running it as a small system of role-specific governance files (constitution, map, status dashboard, append-only log) with a fixed session read order. Use in the maintain phase, after a project is up and running and docs start drifting from code or agents lose context between sessions. Complements one-time onboarding (codebase-onboarding); this is the ongoing discipline that keeps the picture true over months. 中文触发：文档治理、活文档、项目状态追踪、防文档漂移、项目地图、健康仪表盘、流水账、进会话读序、长期项目治理"
+metadata:
+  origin: ECC
 ---
 
 # Living Docs Governance
@@ -57,6 +59,16 @@ Four short reads reconstruct the full working context, instead of re-deriving it
 ## Document Templates
 
 Drop these at the project root and fill the bracketed parts.
+
+`CLAUDE.md` (constitution; keep it short and link out for detail):
+
+| Section | Contents |
+|---|---|
+| Read order | `CLAUDE.md` -> `CLAUDE_MAP.md` -> `PROJECT_STATUS.md` -> `PROJECT_LOG.md` (tail) |
+| Hard rules | The few non-negotiable conventions (naming, imports, no new files) |
+| Signposts | One line each pointing to where detail lives (specs, governance, status) |
+
+Keep it under a page; when a section grows, move the detail into the document that owns it.
 
 `CLAUDE_MAP.md`:
 
