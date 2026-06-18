@@ -1,0 +1,39 @@
+{
+  "$schema": "https://code.kimi.com/schema/kimi.plugin.json",
+  "name": "ecc",
+  "version": "2.0.0-rc.1",
+  "description": "Enhanced Cognitive Controller (ECC) — harness performance optimization system for Kimi Code CLI. 63 agent workflows, 251 skills, reusable hooks, rules, and operator workflows.",
+  "author": {
+    "name": "Affaan Mustafa",
+    "url": "https://x.com/affaanmustafa"
+  },
+  "homepage": "https://ecc.tools",
+  "repository": "https://github.com/affaan-m/ECC",
+  "license": "MIT",
+  "keywords": [
+    "kimi-code",
+    "agents",
+    "skills",
+    "hooks",
+    "rules",
+    "tdd",
+    "code-review",
+    "security",
+    "workflow",
+    "automation",
+    "best-practices"
+  ],
+  "skills": "./skills/",
+  "sessionStart": {
+    "skill": "ecc-session-start"
+  },
+  "skillInstructions": "You are operating with ECC (Enhanced Cognitive Controller) capabilities. When planning complex work, prefer the /skill:ecc-plan workflow. When reviewing code, use the code-review skill. For security-sensitive changes, run the security-scan skill. Always follow verification loops for critical tasks and prefer skills over ad-hoc responses.",
+  "interface": {
+    "displayName": "ECC",
+    "shortDescription": "Harness performance optimization for Kimi Code CLI",
+    "longDescription": "ECC provides 63 agent workflows, 251 skills, reusable hooks, rules, and operator workflows for Kimi Code CLI. Install hooks separately via the ECC hooks installer for full functionality.",
+    "developerName": "Affaan Mustafa",
+    "websiteURL": "https://ecc.tools"
+  },
+  "mcpServers": {}
+}

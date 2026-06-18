@@ -39,7 +39,7 @@
 
 Not just configs. A complete system: skills, instincts, memory optimization, continuous learning, security scanning, and research-first development. Production-ready agents, skills, hooks, rules, MCP configurations, and legacy command shims evolved over 10+ months of intensive daily use building real products.
 
-Works across **Codex**, **Claude Code**, **Cursor**, **OpenCode**, **Gemini**, **Zed**, **GitHub Copilot**, and other AI agent harnesses.
+Works across **Codex**, **Claude Code**, **Cursor**, **OpenCode**, **Gemini**, **Zed**, **Kimi Code CLI**, **GitHub Copilot**, and other AI agent harnesses.
 
 ECC v2.0.0 adds the public Hermes operator story on top of that reusable layer: start with the [Hermes setup guide](docs/HERMES-SETUP.md), then review the [2.0.0 release notes](docs/releases/2.0.0/release-notes.md) and [cross-harness architecture](docs/architecture/cross-harness.md).
 
@@ -1218,6 +1218,7 @@ Yes. ECC is cross-platform:
 - **Gemini CLI**: Experimental project-local support via `.gemini/GEMINI.md` and shared installer plumbing.
 - **OpenCode**: Full plugin support in `.opencode/`. See [OpenCode Support](#opencode-support).
 - **Codex**: First-class support for both macOS app and CLI, with adapter drift guards and SessionStart fallback. See PR [#257](https://github.com/affaan-m/ECC/pull/257).
+- **Kimi Code CLI**: Full plugin support via `kimi.plugin.json`, with 251 skills, hooks via `config.toml`, and built-in subagent delegation. See [Kimi Code CLI Support](#kimi-code-cli-support).
 - **GitHub Copilot (VS Code)**: Instruction and prompt layer via `.github/copilot-instructions.md`, `.vscode/settings.json`, and `.github/prompts/`. See [GitHub Copilot Support](#github-copilot-support).
 - **Antigravity**: Tightly integrated setup for workflows, skills, and flattened rules in `.agent/`. See [Antigravity Guide](docs/ANTIGRAVITY-GUIDE.md).
 - **JoyCode / CodeBuddy**: Project-local selective install adapters for commands, agents, skills, and flattened rules. See [JoyCode Adapter Guide](docs/JOYCODE-GUIDE.md).
@@ -1498,6 +1499,79 @@ ECC provides Zed project support through a conservative `.zed` adapter for proje
 ```
 
 The adapter writes ECC-managed files under `.zed/` and keeps BYOK/OpenRouter credentials out of the repo. Configure Zed account or API keys through Zed's own settings UI or your local user settings.
+
+---
+
+## Kimi Code CLI Support
+
+ECC provides **full Kimi Code CLI support** via the `kimi.plugin.json` manifest, with 251 skills, hooks via `~/.kimi-code/config.toml`, and built-in subagent delegation.
+
+### Quick Start
+
+```bash
+# Install Kimi Code CLI (if not already installed)
+curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash
+
+# Install ECC plugin into Kimi Code CLI
+cd /path/to/ECC
+kimi plugin install .
+
+# Or install from ZIP
+kimi plugin install https://github.com/affaan-m/ECC/archive/refs/heads/main.zip
+
+# Start a new session
+kimi /new
+```
+
+### Install Hooks (Optional but Recommended)
+
+```bash
+node .kimi/install-hooks.mjs
+```
+
+This installs ECC hooks into `~/.kimi-code/config.toml` for dangerous command detection, quality checks, and session management.
+
+### Install Rules to Project
+
+```bash
+# Append ECC rules to AGENTS.md (preserves existing content)
+echo -e "\n\n# ECC Rules\n" >> AGENTS.md
+cat rules/common/coding-style.md rules/common/testing.md rules/common/security.md >> AGENTS.md
+```
+
+### Using ECC with Kimi Code CLI
+
+After installation, use ECC skills via `/skill:` commands:
+
+```
+/skill:ecc-plan "Add user authentication"
+/skill:ecc-code-review
+/skill:ecc-security-scan
+/skill:tdd-workflow
+/skill:verification-loop
+```
+
+Delegate to subagents using Kimi CLI's built-in agents:
+
+```
+Use plan agent to design the database schema
+Use explore agent to find all API endpoints
+Use coder agent to review my recent changes
+```
+
+### Feature Parity
+
+| Feature | Status |
+|---------|--------|
+| 251 Skills | ✅ Full parity (SKILL.md format compatible) |
+| Agents | ⚠️ Mapped to 3 built-in subagents (`coder`/`explore`/`plan`) |
+| Commands | ⚠️ Converted to Skills (`/skill:ecc-plan`, etc.) |
+| Hooks | ✅ Full parity via `config.toml [[hooks]]` |
+| Rules | ✅ Via `sessionStart.skill` + `AGENTS.md` |
+| MCP Servers | ✅ Full parity |
+| Continuous Learning | ✅ Supported |
+
+See [`.kimi/MIGRATION.md`](.kimi/MIGRATION.md) for detailed migration guide from Claude Code.
 
 ---
 
