@@ -1,6 +1,6 @@
 # Everything Claude Code (ECC) — Agent Instructions
 
-This is a **production-ready AI coding plugin** providing 67 specialized agents, 271 skills, 92 commands, and automated hook workflows for software development.
+This is a **production-ready AI coding plugin** providing 69 specialized agents, 273 skills, 95 commands, and automated hook workflows for software development.
 
 **Version:** 2.0.0
 
@@ -47,6 +47,8 @@ This is a **production-ready AI coding plugin** providing 67 specialized agents,
 | pytorch-build-resolver | PyTorch runtime/CUDA/training errors | PyTorch build/training failures |
 | mle-reviewer | Production ML pipeline review | ML pipelines, evals, serving, monitoring, rollback |
 | typescript-reviewer | TypeScript/JavaScript code review | TypeScript/JavaScript projects |
+| al-reviewer | AL (Business Central) code review | AL/Dynamics 365 Business Central projects |
+| al-build-resolver | AL compile/analyzer error resolution | AL build and CodeCop/AppSourceCop failures |
 
 ## Agent Orchestration
 
@@ -151,9 +153,9 @@ Troubleshoot failures: check test isolation → verify mocks → fix implementat
 ## Project Structure
 
 ```
-agents/          — 67 specialized subagents
-skills/          — 271 workflow skills and domain knowledge
-commands/        — 92 slash commands
+agents/          — 69 specialized subagents
+skills/          — 273 workflow skills and domain knowledge
+commands/        — 95 slash commands
 hooks/           — Trigger-based automations
 rules/           — Always-follow guidelines (common + per-language)
 scripts/         — Cross-platform Node.js utilities

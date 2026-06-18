@@ -109,6 +109,11 @@
       "args": ["-y", "@upstash/context7-mcp@latest"],
       "description": "Live documentation lookup — use with /docs command and documentation-lookup skill (resolve-library-id, query-docs)."
     },
+    "microsoft-learn": {
+      "type": "http",
+      "url": "https://learn.microsoft.com/api/mcp",
+      "description": "Microsoft Learn documentation search — fetch trusted, current Microsoft Learn articles and code samples (no auth required). Useful for Business Central/AL, Azure, and other Microsoft stack docs. See agents/al-reviewer.md and agents/al-build-resolver.md."
+    },
     "codescene": {
       "command": "npx",
       "args": ["-y", "@codescene/codehealth-mcp"],

@@ -1,7 +1,50 @@
 {
   "schemaVersion": 1,
-  "totalCommands": 92,
+  "totalCommands": 95,
   "commands": [
+    {
+      "command": "al-build",
+      "description": "Fix AL compilation and analyzer diagnostics, and app.json dependency/ID range issues incrementally. Invokes the al-build-resolver agent for minimal, surgical fixes.",
+      "type": "testing",
+      "primaryAgents": [
+        "al-build-resolver"
+      ],
+      "allAgents": [
+        "al-build-resolver"
+      ],
+      "skills": [
+        "al-patterns"
+      ],
+      "path": "commands/al-build.md"
+    },
+    {
+      "command": "al-review",
+      "description": "Comprehensive AL (Business Central) code review for extension-model safety, event subscriber correctness, and permissions. Invokes the al-reviewer agent.",
+      "type": "testing",
+      "primaryAgents": [
+        "al-reviewer"
+      ],
+      "allAgents": [
+        "al-reviewer"
+      ],
+      "skills": [
+        "al-patterns",
+        "al-testing"
+      ],
+      "path": "commands/al-review.md"
+    },
+    {
+      "command": "al-test",
+      "description": "Enforce TDD workflow for AL (Business Central) using the Test Toolkit. Write GIVEN-WHEN-THEN test codeunits first, then implement.",
+      "type": "testing",
+      "primaryAgents": [],
+      "allAgents": [],
+      "skills": [
+        "al-testing",
+        "tdd-workflow"
+      ],
+      "path": "commands/al-test.md"
+    },
     {
       "command": "aside",
       "description": "Answer a quick side question without interrupting or losing context from the current task. Resume work automatically after answering.",
@@ -1012,7 +1055,7 @@
       "planning": 2,
       "refactoring": 1,
       "review": 13,
-      "testing": 53
+      "testing": 56
     },
     "topAgents": [
       {
@@ -1026,6 +1069,14 @@
       {
         "agent": "typescript-reviewer",
         "count": 2
+      },
+      {
+        "agent": "al-build-resolver",
+        "count": 1
+      },
+      {
+        "agent": "al-reviewer",
+        "count": 1
       },
       {
         "agent": "cpp-build-resolver",
@@ -1046,14 +1097,6 @@
       {
         "agent": "kotlin-build-resolver",
         "count": 1
-      },
-      {
-        "agent": "kotlin-reviewer",
-        "count": 1
-      },
-      {
-        "agent": "planner",
-        "count": 1
       }
     ],
     "topSkills": [
@@ -1062,15 +1105,15 @@
         "count": 6
       },
       {
+        "skill": "tdd-workflow",
+        "count": 5
+      },
+      {
         "skill": "orch-add-feature",
         "count": 4
       },
       {
         "skill": "orch-change-feature",
-        "count": 4
-      },
-      {
-        "skill": "tdd-workflow",
         "count": 4
       },
       {
@@ -1090,11 +1133,11 @@
         "count": 3
       },
       {
-        "skill": "cpp-coding-standards",
+        "skill": "al-patterns",
         "count": 2
       },
       {
-        "skill": "cpp-testing",
+        "skill": "al-testing",
         "count": 2
       }
     ]

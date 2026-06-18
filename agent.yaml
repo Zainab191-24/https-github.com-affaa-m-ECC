@@ -17,6 +17,8 @@ skills:
   - agentic-os
   - ai-first-engineering
   - ai-regression-testing
+  - al-patterns
+  - al-testing
   - android-clean-architecture
   - api-design
   - architecture-decision-records
@@ -156,6 +158,9 @@ skills:
   - visa-doc-translate
   - x-api
 commands:
+  - al-build
+  - al-review
+  - al-test
   - aside
   - auto-update
   - build-fix
